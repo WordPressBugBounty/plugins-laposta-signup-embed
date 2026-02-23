@@ -4,7 +4,6 @@ namespace Laposta\SignupEmbed\Service;
 
 use Laposta\SignupEmbed\Plugin;
 use Laposta\SignupEmbed\Container\Container;
-use Laposta_List;
 
 class DataService
 {
@@ -54,7 +53,7 @@ class DataService
             $this->c->initLaposta();
         }
 
-        return class_exists('\\Laposta');
+        return $this->c->getLapostaApiProxy()->isAvailable();
     }
 
     public function getApiKey(): ?string
@@ -141,9 +140,8 @@ class DataService
             return null;
         }
 
-        $lapostaList = new Laposta_List();
         try {
-            $result = $lapostaList->all();
+            $result = $this->c->getLapostaApiProxy()->getAllLists();
             if (!$result['data']) {
                 $this->setStatus(self::STATUS_NO_LISTS);
             } else {
@@ -158,15 +156,22 @@ class DataService
                 return $this->lists;
             }
         } catch (\Throwable $e) {
+            $logContext = [
+                'type' => 'unknown',
+                'parameter' => null,
+                'code' => $e->getCode(),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ];
             $error = @$e->json_body['error'];
-            if ($error) {
-                if ($error['type'] === 'invalid_request') {
-                    $this->setStatus(self::STATUS_INVALID_API_KEY);
-                }
+            if ($error && $error['type'] === 'invalid_request') {
+                $this->setStatus(self::STATUS_INVALID_API_KEY);
             }
             if (!$this->status) {
                 $this->setStatus('error-api: '.print_r($e, 1));
             }
+            Logger::logError('DataService::getLists, caught Throwable', $logContext);
         }
 
         return null;
@@ -174,7 +179,12 @@ class DataService
 
     public function getListById(string $listId): ?array
     {
-        foreach($this->getLists() as $list) {
+        $lists = $this->getLists();
+        if (!$lists) {
+            return null;
+        }
+
+        foreach($lists as $list) {
             if ($list['list_id'] === $listId) {
                 return $list;
             }
